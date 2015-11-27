@@ -50,18 +50,36 @@ namespace SchedulerServiceApp.Actors
             _connection = cf.CreateConnection();
             _channel = _connection.CreateModel();
             _channel.ExchangeDeclare(_configurationService.WorkersExchange, ExchangeType.Direct);
+
+            // Listen for heartbeats
+            _channel.QueueDeclare(_configurationService.WorkerPingQueue, false, false, true, null);
+            _channel.QueueBind(_configurationService.WorkerPingQueue, _configurationService.WorkersExchange, _configurationService.WorkerPingQueue);
+            var heartbeatConsumer = new EventingBasicConsumer(_channel);
+            heartbeatConsumer.Received += OnReceivedHeartbeat;
+            heartbeatConsumer.ConsumerCancelled += OnConsumerCancelled;
+            heartbeatConsumer.Shutdown += OnShutdown;
+            _channel.BasicConsume(_configurationService.WorkerPingQueue, true, heartbeatConsumer);
+
+            // Listen or status changes
             _channel.QueueDeclare(_configurationService.WorkerStatusQueue, false, false, true, null);
-            _channel.QueueBind(_configurationService.WorkerStatusQueue, _configurationService.WorkersExchange, string.Empty);
-
-            var consumer = new EventingBasicConsumer(_channel);
-            consumer.Received += OnReceived;
-            consumer.ConsumerCancelled += OnConsumerCancelled;
-            consumer.Shutdown += OnShutdown;
-
-            _channel.BasicConsume(_configurationService.WorkerStatusQueue, false, consumer);
+            _channel.QueueBind(_configurationService.WorkerStatusQueue, _configurationService.WorkersExchange, _configurationService.WorkerStatusQueue);
+            var statusConsumer = new EventingBasicConsumer(_channel);
+            statusConsumer.Received += OnReceivedStatus;
+            statusConsumer.ConsumerCancelled += OnConsumerCancelled;
+            statusConsumer.Shutdown += OnShutdown;
+            _channel.BasicConsume(_configurationService.WorkerStatusQueue, false, statusConsumer);
         }
 
-        private void OnReceived(object sender, BasicDeliverEventArgs e)
+        private void OnReceivedHeartbeat(object sender, BasicDeliverEventArgs e)
+        {
+            var payload = Encoding.UTF8.GetString(e.Body);
+            var nodeId = ulong.Parse(payload);
+            UpdateWorkerKeepalive(nodeId);
+
+            _logger.LogInformation(string.Format("WorkerNodeManagerActor received heartbeat from {0}", nodeId));
+        }
+
+        private void OnReceivedStatus(object sender, BasicDeliverEventArgs e)
         {
             var payload = Encoding.UTF8.GetString(e.Body);
             var nodeStatus = JsonConvert.DeserializeObject<WorkerNodeStatusDto>(payload);
@@ -80,6 +98,10 @@ namespace SchedulerServiceApp.Actors
         private void OnShutdown(object sender, ShutdownEventArgs e)
         {
             //TODO
+        }
+
+        private void UpdateWorkerKeepalive(ulong nodeId)
+        {
         }
 
         private void UpdateWorkerStatus(WorkerNodeStatusDto nodeStatus)

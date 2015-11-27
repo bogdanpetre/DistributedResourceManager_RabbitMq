@@ -10,6 +10,7 @@ namespace Contracts.Interfaces
     {
         string WorkersExchange { get; }
         string WorkerStatusQueue { get; }
+        string WorkerPingQueue { get; }
         TimeSpan WorkerStatusReportInterval { get; }
     }
 
@@ -17,6 +18,7 @@ namespace Contracts.Interfaces
     {
         public string WorkersExchange { get { return "X_WorkersExchange"; } }
         public string WorkerStatusQueue { get { return "X_WorkerStatuses"; } }
+        public string WorkerPingQueue { get { return "X_WorkerPings"; } }
         public TimeSpan WorkerStatusReportInterval { get { return TimeSpan.FromMilliseconds(1000); } }
     }
 }

@@ -39,12 +39,13 @@ namespace WorkerServiceApp.Actors
         {
             Connect();
             _pingTimer.Initialize(_configurationService.WorkerStatusReportInterval);
-            _pingTimer.Tick += SendStatusUpdate;
+            _pingTimer.Tick += SendPing;
             _pingTimer.Start();
         }
 
         public void Stop()
         {
+            _pingTimer.Tick -= SendPing;
             _pingTimer.Stop();
             _connection.Close(1000);
         }
@@ -65,16 +66,28 @@ namespace WorkerServiceApp.Actors
             _connection = cf.CreateConnection();
             _channel = _connection.CreateModel();
             _channel.ExchangeDeclare(_configurationService.WorkersExchange, ExchangeType.Direct);
+
             _channel.QueueDeclare(_configurationService.WorkerStatusQueue, false, false, true, null);
             _channel.QueueBind(_configurationService.WorkerStatusQueue, _configurationService.WorkersExchange, string.Empty);
 
+            _channel.QueueDeclare(_configurationService.WorkerPingQueue, false, false, true, null);
+            _channel.QueueBind(_configurationService.WorkerPingQueue, _configurationService.WorkersExchange, string.Empty);
+
             _channel.ConfirmSelect();
+        }
+
+        private void SendPing()
+        {
+            var body = Encoding.UTF8.GetBytes(_nodeStatus.NodeId.ToString());
+            _channel.BasicPublish(_configurationService.WorkersExchange, _configurationService.WorkerPingQueue, null, body);
+
+            _logger.LogInformation(string.Format("WorkerStatusAgent sent ping for node {0}", _nodeStatus.NodeId));
         }
 
         private void SendStatusUpdate()
         {
             var body = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(_nodeStatus));
-            _channel.BasicPublish(_configurationService.WorkersExchange, string.Empty, null, body);
+            _channel.BasicPublish(_configurationService.WorkersExchange, _configurationService.WorkerStatusQueue, null, body);
 
             _logger.LogInformation(string.Format("WorkerStatusAgent sent status update for node {0}", _nodeStatus.NodeId));
         }
